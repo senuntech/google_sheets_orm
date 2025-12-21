@@ -56,7 +56,7 @@ class _SheetsPocState extends State<SheetsPoc> {
 
     await gsheets.initialize(
       httpClient: httpClient,
-      fileName: "Minha Loja - DB",
+      fileName: "Minha Base",
       structure: minhaEstrutura,
     );
 
