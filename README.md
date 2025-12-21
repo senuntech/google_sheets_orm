@@ -17,7 +17,7 @@ https://www.googleapis.com/auth/drive.file
 Adicione as dependências no seu pubspec.yaml:
 ```
 dependencies:
-  google_sheets_orm: # Caminho para o seu package
+  google_sheets_orm: 1.0.0
   googleapis: ^13.0.0
   google_sign_in: ^6.2.1
   extension_google_sign_in_as_googleapis_auth: ^2.0.0
