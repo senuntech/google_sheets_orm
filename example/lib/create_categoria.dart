@@ -16,7 +16,7 @@ class _CreateCategoriaState extends State<CreateCategoria> {
 
   Future<void> _addCategoria() async {
     // Exemplo: Criando categoria via diálogo ou input
-    await repo.create({
+    await repo.insert({
       "nome_categoria": "Nova Categoria ${DateTime.now().second}",
     });
     setState(() {}); // Atualiza a lista

@@ -13,12 +13,33 @@ class _CreateProdutoState extends State<CreateProduto> {
   SheetORM get repo => db.repo("Produtos");
 
   Future<void> addProduto() async {
-    await repo.create({
+    await repo.insert({
       "nome": "Produto Novo",
       "preco": 25.00,
       "id_categoria": 1,
       "updated_at": DateTime.now().toIso8601String(),
     });
+    setState(() {});
+  }
+
+  Future<void> insertAll() async {
+    final list = List.generate(
+      100,
+      (index) => {
+        "nome": "Produto Novo",
+        "preco": 25.00,
+        "id_categoria": 10,
+        "updated_at": DateTime.now().toIso8601String(),
+      },
+    );
+
+    await repo.insertAll(list);
+
+    setState(() {});
+  }
+
+  Future<void> deleteWhere(String query) async {
+    await repo.deleteWhere(query);
     setState(() {});
   }
 
@@ -67,9 +88,27 @@ class _CreateProdutoState extends State<CreateProduto> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: addProduto,
-        child: const Icon(Icons.add),
+      floatingActionButton: Column(
+        mainAxisSize: .min,
+        children: [
+          FloatingActionButton(
+            heroTag: null,
+            onPressed: () => deleteWhere("id_categoria=10"),
+            child: const Icon(Icons.delete),
+          ),
+          SizedBox(height: 10),
+          FloatingActionButton(
+            heroTag: null,
+            onPressed: insertAll,
+            child: const Icon(Icons.add_circle_rounded),
+          ),
+          SizedBox(height: 10),
+          FloatingActionButton(
+            heroTag: null,
+            onPressed: addProduto,
+            child: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }

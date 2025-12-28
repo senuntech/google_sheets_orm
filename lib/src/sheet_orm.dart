@@ -72,7 +72,7 @@ class SheetORM {
   }
 
   /// Cria um registro com auto-incremento de ID
-  Future<int> create(Map<String, dynamic> data) async {
+  Future<int> insert(Map<String, dynamic> data) async {
     final response = await api.spreadsheets.values.get(
       spreadsheetId,
       '$sheetName!A:Z',
@@ -106,6 +106,62 @@ class SheetORM {
     return newId;
   }
 
+  /// Insere múltiplos registros com auto-incremento de ID
+  Future<List<int>> insertAll(List<Map<String, dynamic>> dataList) async {
+    if (dataList.isEmpty) return [];
+
+    final response = await api.spreadsheets.values.get(
+      spreadsheetId,
+      '$sheetName!A:Z',
+    );
+
+    final rows = response.values ?? [];
+    if (rows.isEmpty) throw Exception("Cabeçalhos não encontrados.");
+
+    final headers = List<String>.from(rows[0]);
+    int idColIndex = headers.indexOf("id");
+    if (idColIndex == -1) throw Exception("Coluna 'id' não encontrada.");
+
+    int maxId = 0;
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i].length > idColIndex) {
+        var currentIdValue = rows[i][idColIndex].toString();
+        if (currentIdValue.isNotEmpty) {
+          int? currentId = int.tryParse(currentIdValue);
+          if (currentId != null && currentId > maxId) {
+            maxId = currentId;
+          }
+        }
+      }
+    }
+
+    List<List<Object>> newRows = [];
+    List<int> newIds = [];
+    int nextId = maxId + 1;
+
+    for (var data in dataList) {
+      final newRow = headers.map((h) {
+        if (h == "id") {
+          return nextId;
+        }
+        return data[h] ?? "";
+      }).toList();
+
+      newRows.add(List.from(newRow));
+      newIds.add(nextId);
+      nextId++;
+    }
+
+    await api.spreadsheets.values.append(
+      sheets.ValueRange(values: newRows),
+      spreadsheetId,
+      '$sheetName!A1',
+      valueInputOption: "USER_ENTERED",
+    );
+
+    return newIds;
+  }
+
   /// Atualiza uma linha inteira em uma única chamada de API
   Future<void> updateWhereId(String id, Map<String, dynamic> data) async {
     final response = await api.spreadsheets.values.get(
@@ -134,6 +190,84 @@ class SheetORM {
       spreadsheetId,
       '$sheetName!A${rowIndex + 1}',
       valueInputOption: 'USER_ENTERED',
+    );
+  }
+
+  /// Deleta registros usando uma string de consulta (ex: "id=10" ou "status=inativo")
+  Future<void> deleteWhere(String query) async {
+    final regExp = RegExp(r"(\w+)\s*(=|!=|>|<)\s*(.+)");
+    final match = regExp.firstMatch(query);
+
+    if (match == null) {
+      throw Exception("Formato de query inválido. Use 'coluna=valor'.");
+    }
+
+    final field = match.group(1);
+    final operator = match.group(2);
+    final value = match
+        .group(3)
+        ?.replaceAll("'", "")
+        .replaceAll('"', '')
+        .trim();
+
+    final response = await api.spreadsheets.values.get(
+      spreadsheetId,
+      '$sheetName!A:Z',
+    );
+
+    final rows = response.values ?? [];
+    if (rows.isEmpty) return;
+
+    final headers = List<String>.from(rows[0]);
+    int colIndex = headers.indexOf(field!);
+
+    if (colIndex == -1) {
+      throw Exception("Coluna '$field' não encontrada na planilha.");
+    }
+
+    List<int> indicesToDelete = [];
+
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i].length <= colIndex) continue;
+
+      final cellValue = rows[i][colIndex].toString();
+      bool shouldDelete = false;
+
+      switch (operator) {
+        case '=':
+          shouldDelete = (cellValue == value);
+          break;
+        case '!=':
+          shouldDelete = (cellValue != value);
+          break;
+      }
+
+      if (shouldDelete) {
+        indicesToDelete.add(i);
+      }
+    }
+
+    if (indicesToDelete.isEmpty) return;
+
+    final gid = await _getGid();
+    indicesToDelete.sort((a, b) => b.compareTo(a));
+
+    final requests = indicesToDelete.map((index) {
+      return sheets.Request(
+        deleteDimension: sheets.DeleteDimensionRequest(
+          range: sheets.DimensionRange(
+            sheetId: gid,
+            dimension: "ROWS",
+            startIndex: index,
+            endIndex: index + 1,
+          ),
+        ),
+      );
+    }).toList();
+
+    await api.spreadsheets.batchUpdate(
+      sheets.BatchUpdateSpreadsheetRequest(requests: requests),
+      spreadsheetId,
     );
   }
 
