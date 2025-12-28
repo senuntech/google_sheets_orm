@@ -6,6 +6,6 @@
 
 * Added header synchronization
 
-## 1.0.2
+## 1.1.0
 
 * Added insertAll method and deleteWhere method
