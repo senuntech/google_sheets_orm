@@ -1,5 +1,5 @@
 ### 📊 Google Sheets ORM
-##### Este package transforma o Google Sheets em um banco de dados dinâmico para aplicações Flutter, permitindo operações de CRUD (Create, Read, Update, Delete) utilizando Mapas (JSON), com gerenciamento automático de IDs e criação de tabelas.
+##### Este package transforma o Google Sheets em um banco de dados dinâmico para aplicações Flutter, permitindo operações de CRUD (e, Read, Update, Delete) utilizando Mapas (JSON), com gerenciamento automático de IDs e criação de tabelas.
 
 
 ### 🛠️ 1. Configuração do Ambiente (Google Cloud)
@@ -60,11 +60,11 @@ final db = GoogleSheetsDatabase();
 SheetORM get repo => db.repo("Produtos");
 ```
 
-##### Criar Registro (Create)
+##### Criar Registro (e)
 O campo id é gerado automaticamente (Auto-incremento).
 
 ```dart
-await repo.create({
+await repo.insert({
   "descricao": "Notebook Gamer",
   "valor": 4500.00,
   "estoque": 10,
