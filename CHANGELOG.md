@@ -9,3 +9,7 @@
 ## 1.1.0
 
 * Added insertAll method and deleteWhere method
+
+## 1.2.0
+
+* Added foreign key support

@@ -1,4 +1,6 @@
+import 'package:google_sheets_orm/orm.dart';
 import 'package:google_sheets_orm/src/sheet_orm.dart';
+import 'package:google_sheets_orm/src/utils.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:googleapis/drive/v3.dart' as drive;
 
@@ -28,6 +30,7 @@ class GoogleSheetsDatabase {
     required dynamic httpClient,
     required String fileName,
     required Map<String, List<String>> structure,
+    List<ForeignKey>? foreignKeys,
   }) async {
     _fileName = fileName;
     _structure = structure;
@@ -42,6 +45,9 @@ class GoogleSheetsDatabase {
 
     if (search.files != null && search.files!.isNotEmpty) {
       spreadsheetId = search.files!.first.id;
+      if (foreignKeys != null) {
+        await updateForeignKey(sheetsApi, foreignKeys);
+      }
 
       // Now checks both NEW columns and name CHANGES
       await _synchronizeStructure(sheetsApi);
@@ -61,7 +67,82 @@ class GoogleSheetsDatabase {
 
     var sheetResponse = await sheetsApi.spreadsheets.create(newSpreadsheet);
     spreadsheetId = sheetResponse.spreadsheetId;
+
+    if (foreignKeys != null) {
+      await updateForeignKey(sheetsApi, foreignKeys);
+    }
+
     await _configureHeaders(sheetsApi);
+  }
+
+  Future<void> updateForeignKey(
+    sheets.SheetsApi api,
+    List<ForeignKey>? foreignKeyConfigs,
+  ) async {
+    if (foreignKeyConfigs == null || foreignKeyConfigs.isEmpty) return;
+
+    final List<sheets.ValueRange> updateBatch = [];
+
+    for (final config in foreignKeyConfigs) {
+      // Nomes claros: origem (source) vs destino/referência (lookup)
+      final sourceSheetHeaders = _structure[config.sourceTable];
+      final lookupSheetHeaders = _structure[config.lookupTable];
+
+      if (sourceSheetHeaders == null || lookupSheetHeaders == null) {
+        throw Exception("Sheet structure not found for: ${config.sourceTable}");
+      }
+
+      // Identificando índices (Column Index)
+      final colIdxTrigger = sourceSheetHeaders.indexOf(config.sourceKeyColumn);
+      final colIdxLookupKey = lookupSheetHeaders.indexOf(
+        config.lookupKeyColumn,
+      );
+      final colIdxLookupValue = lookupSheetHeaders.indexOf(
+        config.lookupResultColumn,
+      );
+      final colIdxTarget = sourceSheetHeaders.indexOf(
+        config.sourceTargetColumn,
+      );
+
+      if ([
+        colIdxTrigger,
+        colIdxLookupKey,
+        colIdxLookupValue,
+        colIdxTarget,
+      ].contains(-1)) {
+        throw Exception(
+          "One or more columns not found in sheet: ${config.sourceTable}",
+        );
+      }
+
+      final colLetterTrigger = listAlfabetic(colIdxTrigger);
+      final colLetterLookupKey = listAlfabetic(colIdxLookupKey);
+      final colLetterLookupValue = listAlfabetic(colIdxLookupValue);
+      final colLetterTarget = listAlfabetic(colIdxTarget);
+
+      final xLookupFormula =
+          "=ARRAYFORMULA(SE(${colLetterTrigger}2:${colLetterTrigger} =\"\"; \"\"; PROCX(${colLetterTrigger}2:${colLetterTrigger}; ${config.lookupTable}!$colLetterLookupKey:$colLetterLookupKey; ${config.lookupTable}!$colLetterLookupValue:$colLetterLookupValue; \"not found\")))";
+
+      final targetCellRange = '${config.sourceTable}!${colLetterTarget}2';
+
+      updateBatch.add(
+        sheets.ValueRange(
+          range: targetCellRange,
+          values: [
+            [xLookupFormula],
+          ],
+        ),
+      );
+    }
+
+    if (updateBatch.isNotEmpty) {
+      final batchRequest = sheets.BatchUpdateValuesRequest(
+        data: updateBatch,
+        valueInputOption: "USER_ENTERED",
+      );
+
+      await api.spreadsheets.values.batchUpdate(batchRequest, spreadsheetId!);
+    }
   }
 
   Future<void> _configureHeaders(sheets.SheetsApi api) async {

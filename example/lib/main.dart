@@ -50,14 +50,39 @@ class _SheetsPocState extends State<SheetsPoc> {
     var httpClient = (await googleSignIn.authenticatedClient())!;
 
     final minhaEstrutura = {
-      "Produtos": ["id", "nome", "preco", "id_categoria"],
-      "Categorias": ["id", "nome_categoria"],
+      "Produtos": [
+        "id",
+        "nome",
+        "preco",
+        "id_categoria",
+        "nome_da_categoria",
+        "teste",
+      ],
+      "Categorias": ["id", "nome_categoria", "id_produto", "nome"],
     };
 
     await gsheets.initialize(
       httpClient: httpClient,
       fileName: "Minha Base",
       structure: minhaEstrutura,
+      foreignKeys: [
+        ForeignKey(
+          sourceTable: "Produtos",
+          sourceKeyColumn: "id_categoria",
+          sourceTargetColumn: "nome_da_categoria",
+          lookupTable: "Categorias",
+          lookupKeyColumn: "id",
+          lookupResultColumn: "nome_categoria",
+        ),
+        ForeignKey(
+          sourceTable: "Categorias",
+          sourceKeyColumn: "id_produto",
+          sourceTargetColumn: "nome",
+          lookupTable: "Produtos",
+          lookupKeyColumn: "id",
+          lookupResultColumn: "teste",
+        ),
+      ],
     );
 
     print("Pronto para usar a planilha: ${gsheets.spreadsheetId}");
