@@ -193,7 +193,7 @@ class SheetORM {
         (e) => e.sourceTargetColumn == headers.elementAt(i),
       );
       if (isFk) {
-        updatedRow[i] = "";
+        updatedRow[i] = null;
       }
     }
 
