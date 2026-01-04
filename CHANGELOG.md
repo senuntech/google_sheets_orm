@@ -13,3 +13,8 @@
 ## 1.2.0
 
 * Added foreign key support
+
+## 1.2.1
+
+* Fixed update method
+

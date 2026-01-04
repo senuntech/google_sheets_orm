@@ -1,3 +1,4 @@
+import 'package:google_sheets_orm/orm.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
 
 class SheetORM {
@@ -5,8 +6,9 @@ class SheetORM {
   final String spreadsheetId;
   final String sheetName;
   int? _cachedGid;
+  List<ForeignKey>? foreignKeys;
 
-  SheetORM(this.api, this.spreadsheetId, this.sheetName);
+  SheetORM(this.api, this.spreadsheetId, this.sheetName, this.foreignKeys);
 
   /// Obtém o ID numérico da aba (GID) com cache para evitar chamadas extras
   Future<int> _getGid() async {
@@ -182,8 +184,18 @@ class SheetORM {
     List<Object?> updatedRow = List<Object?>.generate(headers.length, (j) {
       final header = headers[j];
       if (data.containsKey(header) && header != "id") return data[header];
+
       return j < rows[rowIndex].length ? rows[rowIndex][j] : "";
     });
+
+    for (var i = 0; i < headers.length; i++) {
+      final isFk = foreignKeys!.any(
+        (e) => e.sourceTargetColumn == headers.elementAt(i),
+      );
+      if (isFk) {
+        updatedRow[i] = "";
+      }
+    }
 
     await api.spreadsheets.values.update(
       sheets.ValueRange(values: [updatedRow]),

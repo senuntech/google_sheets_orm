@@ -16,6 +16,7 @@ class GoogleSheetsDatabase {
   String _fileName = "App Database";
   Map<String, List<String>> _structure = {};
   sheets.SheetsApi? api;
+  List<ForeignKey>? foreignKeys;
 
   SheetORM repo(String sheetName) {
     if (spreadsheetId == null || api == null) {
@@ -23,7 +24,7 @@ class GoogleSheetsDatabase {
         "Database not initialized. Call initialize() first in splash or login.",
       );
     }
-    return SheetORM(api!, spreadsheetId!, sheetName);
+    return SheetORM(api!, spreadsheetId!, sheetName, foreignKeys);
   }
 
   Future<void> initialize({
@@ -34,6 +35,7 @@ class GoogleSheetsDatabase {
   }) async {
     _fileName = fileName;
     _structure = structure;
+    this.foreignKeys = foreignKeys;
 
     final driveApi = drive.DriveApi(httpClient);
     final sheetsApi = sheets.SheetsApi(httpClient);
@@ -121,7 +123,7 @@ class GoogleSheetsDatabase {
       final colLetterTarget = listAlfabetic(colIdxTarget);
 
       final xLookupFormula =
-          "=ARRAYFORMULA(SE(${colLetterTrigger}2:${colLetterTrigger} =\"\"; \"\"; PROCX(${colLetterTrigger}2:${colLetterTrigger}; ${config.lookupTable}!$colLetterLookupKey:$colLetterLookupKey; ${config.lookupTable}!$colLetterLookupValue:$colLetterLookupValue; \"not found\")))";
+          "=ARRAYFORMULA(SE(${colLetterTrigger}2:$colLetterTrigger =\"\"; \"\"; PROCX(${colLetterTrigger}2:$colLetterTrigger; ${config.lookupTable}!$colLetterLookupKey:$colLetterLookupKey; ${config.lookupTable}!$colLetterLookupValue:$colLetterLookupValue; \"not found\")))";
 
       final targetCellRange = '${config.sourceTable}!${colLetterTarget}2';
 
