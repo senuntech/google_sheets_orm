@@ -18,3 +18,6 @@
 
 * Fixed update method
 
+## 1.2.2
+
+* Fixed foreign key handling
