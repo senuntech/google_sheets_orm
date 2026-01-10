@@ -21,3 +21,8 @@
 ## 1.2.2
 
 * Fixed foreign key handling
+
+## 1.3.0
+
+* Added insertByCell method
+ 
