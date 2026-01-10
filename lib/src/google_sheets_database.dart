@@ -1,4 +1,6 @@
 import 'package:google_sheets_orm/orm.dart';
+import 'package:google_sheets_orm/src/cell.dart';
+import 'package:google_sheets_orm/src/formula.dart';
 import 'package:google_sheets_orm/src/sheet_orm.dart';
 import 'package:google_sheets_orm/src/utils.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
@@ -17,6 +19,7 @@ class GoogleSheetsDatabase {
   Map<String, List<String>> _structure = {};
   sheets.SheetsApi? api;
   List<ForeignKey>? foreignKeys;
+  List<Formula>? formulas;
 
   SheetORM repo(String sheetName) {
     if (spreadsheetId == null || api == null) {
@@ -27,15 +30,18 @@ class GoogleSheetsDatabase {
     return SheetORM(api!, spreadsheetId!, sheetName, foreignKeys);
   }
 
+  /// Inicializa a base de dados
   Future<void> initialize({
     required dynamic httpClient,
     required String fileName,
     required Map<String, List<String>> structure,
+    List<Formula>? formulas,
     List<ForeignKey>? foreignKeys,
   }) async {
     _fileName = fileName;
     _structure = structure;
     this.foreignKeys = foreignKeys;
+    this.formulas = formulas;
 
     final driveApi = drive.DriveApi(httpClient);
     final sheetsApi = sheets.SheetsApi(httpClient);
@@ -49,6 +55,9 @@ class GoogleSheetsDatabase {
       spreadsheetId = search.files!.first.id;
       if (foreignKeys != null) {
         await updateForeignKey(sheetsApi, foreignKeys);
+      }
+      if (formulas != null) {
+        await _updateFormulas(sheetsApi);
       }
 
       // Now checks both NEW columns and name CHANGES
@@ -73,10 +82,14 @@ class GoogleSheetsDatabase {
     if (foreignKeys != null) {
       await updateForeignKey(sheetsApi, foreignKeys);
     }
+    if (formulas != null) {
+      await _updateFormulas(sheetsApi);
+    }
 
     await _configureHeaders(sheetsApi);
   }
 
+  /// Atualiza as foreign keys na planilha
   Future<void> updateForeignKey(
     sheets.SheetsApi api,
     List<ForeignKey>? foreignKeyConfigs,
@@ -147,6 +160,7 @@ class GoogleSheetsDatabase {
     }
   }
 
+  /// Configura os headers na planilha
   Future<void> _configureHeaders(sheets.SheetsApi api) async {
     if (spreadsheetId == null) return;
 
@@ -160,6 +174,7 @@ class GoogleSheetsDatabase {
     }
   }
 
+  /// Sincroniza a estrutura da planilha
   Future<void> _synchronizeStructure(sheets.SheetsApi sheetsApi) async {
     final ss = await sheetsApi.spreadsheets.get(spreadsheetId!);
     final existingSheets =
@@ -215,6 +230,7 @@ class GoogleSheetsDatabase {
     return true;
   }
 
+  /// Atualiza os headers na planilha
   Future<void> _updateHeader(
     sheets.SheetsApi api,
     String name,
@@ -226,5 +242,32 @@ class GoogleSheetsDatabase {
       "$name!A1",
       valueInputOption: "USER_ENTERED",
     );
+  }
+
+  /// Atualiza as fórmulas na planilha
+  Future<void> _updateFormulas(sheets.SheetsApi api) async {
+    if (formulas == null || formulas!.isEmpty) return;
+
+    final List<sheets.ValueRange> updateBatch = [];
+
+    for (final formula in formulas!) {
+      updateBatch.add(
+        sheets.ValueRange(
+          range: "${formula.sheet}!${formula.range}",
+          values: [
+            [formula.formula],
+          ],
+        ),
+      );
+    }
+
+    if (updateBatch.isNotEmpty) {
+      final batchRequest = sheets.BatchUpdateValuesRequest(
+        data: updateBatch,
+        valueInputOption: "USER_ENTERED",
+      );
+
+      await api.spreadsheets.values.batchUpdate(batchRequest, spreadsheetId!);
+    }
   }
 }

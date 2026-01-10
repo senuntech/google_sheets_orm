@@ -316,4 +316,27 @@ class SheetORM {
       spreadsheetId,
     );
   }
+
+  /// Insere uma formula/valores em uma coluna ou linha exemplo: "A1:B1"
+  Future<void> insertByCell(List<Cell> cells) async {
+    final List<sheets.ValueRange> updateBatch = [];
+
+    for (final cell in cells) {
+      updateBatch.add(
+        sheets.ValueRange(
+          range: "$sheetName!${cell.range}",
+          values: cell.value.map((e) => [e]).toList(),
+        ),
+      );
+    }
+
+    if (updateBatch.isNotEmpty) {
+      final batchRequest = sheets.BatchUpdateValuesRequest(
+        data: updateBatch,
+        valueInputOption: "USER_ENTERED",
+      );
+
+      await api.spreadsheets.values.batchUpdate(batchRequest, spreadsheetId);
+    }
+  }
 }
