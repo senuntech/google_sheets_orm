@@ -25,4 +25,6 @@
 ## 1.3.0
 
 * Added insertByCell method
+* Added formula support
+
  

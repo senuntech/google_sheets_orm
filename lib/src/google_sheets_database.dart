@@ -1,5 +1,6 @@
 import 'package:google_sheets_orm/orm.dart';
 import 'package:google_sheets_orm/src/cell.dart';
+import 'package:google_sheets_orm/src/formula.dart';
 import 'package:google_sheets_orm/src/sheet_orm.dart';
 import 'package:google_sheets_orm/src/utils.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
@@ -18,7 +19,7 @@ class GoogleSheetsDatabase {
   Map<String, List<String>> _structure = {};
   sheets.SheetsApi? api;
   List<ForeignKey>? foreignKeys;
-  List<Cell>? cells;
+  List<Formula>? formulas;
 
   SheetORM repo(String sheetName) {
     if (spreadsheetId == null || api == null) {
@@ -34,13 +35,13 @@ class GoogleSheetsDatabase {
     required dynamic httpClient,
     required String fileName,
     required Map<String, List<String>> structure,
-    List<Cell>? cells,
+    List<Formula>? formulas,
     List<ForeignKey>? foreignKeys,
   }) async {
     _fileName = fileName;
     _structure = structure;
     this.foreignKeys = foreignKeys;
-    this.cells = cells;
+    this.formulas = formulas;
 
     final driveApi = drive.DriveApi(httpClient);
     final sheetsApi = sheets.SheetsApi(httpClient);
@@ -55,7 +56,7 @@ class GoogleSheetsDatabase {
       if (foreignKeys != null) {
         await updateForeignKey(sheetsApi, foreignKeys);
       }
-      if (cells != null) {
+      if (formulas != null) {
         await _updateFormulas(sheetsApi);
       }
 
@@ -81,7 +82,7 @@ class GoogleSheetsDatabase {
     if (foreignKeys != null) {
       await updateForeignKey(sheetsApi, foreignKeys);
     }
-    if (cells != null) {
+    if (formulas != null) {
       await _updateFormulas(sheetsApi);
     }
 
@@ -245,16 +246,16 @@ class GoogleSheetsDatabase {
 
   /// Atualiza as fórmulas na planilha
   Future<void> _updateFormulas(sheets.SheetsApi api) async {
-    if (cells == null || cells!.isEmpty) return;
+    if (formulas == null || formulas!.isEmpty) return;
 
     final List<sheets.ValueRange> updateBatch = [];
 
-    for (final cell in cells!) {
+    for (final formula in formulas!) {
       updateBatch.add(
         sheets.ValueRange(
-          range: "${cell.sheet}!${cell.columns}",
+          range: "${formula.sheet}!${formula.range}",
           values: [
-            [cell.formula],
+            [formula.formula],
           ],
         ),
       );

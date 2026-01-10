@@ -324,10 +324,8 @@ class SheetORM {
     for (final cell in cells) {
       updateBatch.add(
         sheets.ValueRange(
-          range: "${cell.sheet}!${cell.columns}",
-          values: [
-            [cell.formula],
-          ],
+          range: "$sheetName!${cell.range}",
+          values: cell.value.map((e) => [e]).toList(),
         ),
       );
     }

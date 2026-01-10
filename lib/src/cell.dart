@@ -1,12 +1,9 @@
 class Cell {
   /// Formula a ser aplicada (exemplo: "=SUM(A1:B1)")
-  String formula;
+  List<Object?> value;
 
   /// Colunas a serem aplicadas (exemplo: "A1:B1")
-  String columns;
+  String range;
 
-  /// Tabela a ser aplicada (exemplo: "Sheet1")
-  String sheet;
-
-  Cell({required this.formula, required this.columns, required this.sheet});
+  Cell({required this.value, required this.range});
 }
