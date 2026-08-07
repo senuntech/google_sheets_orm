@@ -37,10 +37,11 @@ final googleUser = await GoogleSignIn(scopes: [
 
 final httpClient = (await googleUser?.authenticatedClient())!;
 
-// Configura o nome do arquivo, estrutura de abas/colunas, foreign keys e fórmulas
+// Configura o nome do arquivo, estrutura de abas/colunas, cacheTime, foreign keys e fórmulas
 await db.initialize(
   httpClient: httpClient,
   fileName: "Minha_Base_Dados_App",
+  cacheTime: const Duration(seconds: 30), // (Opcional) Tempo de cache local das abas na memória. Padrão: 0s.
   structure: {
     "Clientes": ["id", "nome"],
     "Debitos": ["id", "id_cliente", "valor", "nome_cliente"],
@@ -134,6 +135,10 @@ Se você ativar `onDeleteCascade: true` em uma `ForeignKey`, deletar um registro
 #### 3. Proteção Automática de Colunas
 Por padrão, as colunas alvo de `ForeignKey` e `Formula` são configuradas no Google Sheets com regras de proteção de intervalo (`Protected Range`). O ORM solicita à API que exiba um aviso caso um usuário tente editar manualmente essas colunas calculadas na interface web do Planilhas.
 
+#### 4. Cache em Memória (Otimização de API)
+Para poupar requisições, `GoogleSheetsDatabase.initialize` aceita a configuração `cacheTime`.
+Quando ativado (ex: `Duration(seconds: 30)`), o ORM buscará os dados do Google Sheets apenas 1 vez, salvando o estado da aba na RAM e retornando leituras instantâneas durante esse período.
+> **Detalhe vital**: Sempre que uma operação de escrita (`insert`, `update`, `delete`) for disparada pelo aplicativo, o cache local da aba é DESTRUÍDO automaticamente, garantindo que sua próxima leitura obrigatoriamente busque as informações frescas no Google Sheets, mantendo consistência absoluta.
 
 ### 📂 6. Arquitetura do Sistema
 
