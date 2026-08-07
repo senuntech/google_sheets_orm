@@ -42,8 +42,12 @@ class GoogleSheetsDatabase {
     this.foreignKeys = foreignKeys;
     this.formulas = formulas;
 
-    if (injectedDriveApi == null && injectedSheetsApi == null && httpClient == null) {
-      throw Exception("You must provide either an httpClient or injected APIs for testing.");
+    if (injectedDriveApi == null &&
+        injectedSheetsApi == null &&
+        httpClient == null) {
+      throw Exception(
+        "You must provide either an httpClient or injected APIs for testing.",
+      );
     }
 
     final driveApi = injectedDriveApi ?? drive.DriveApi(httpClient!);
@@ -162,6 +166,19 @@ class GoogleSheetsDatabase {
       );
 
       await api.spreadsheets.values.batchUpdate(batchRequest, spreadsheetId!);
+    }
+  }
+
+  /// Restaura as fórmulas e foreign keys.
+  /// Útil para ser chamado após deleção de linhas que podem ter apagado a linha 2 (onde as fórmulas residem).
+  Future<void> reapplyFormulas() async {
+    if (api == null || spreadsheetId == null) return;
+
+    if (foreignKeys != null && foreignKeys!.isNotEmpty) {
+      await updateForeignKey(api!, foreignKeys);
+    }
+    if (formulas != null && formulas!.isNotEmpty) {
+      await _updateFormulas(api!);
     }
   }
 
@@ -363,5 +380,68 @@ class GoogleSheetsDatabase {
         ),
       ),
     );
+  }
+
+  /// Constrói de forma recursiva todas as requisições de deleção para os filhos
+  /// (e netos) caso o `onDeleteCascade` esteja ativado no ForeignKey.
+  /// Retorna um Map agrupando por sheetId (GID) um Set de índices de linha únicos a deletar.
+  Future<Map<int, Set<int>>> buildCascadeDeleteIndices(
+    String sheetName,
+    List<String> idsToDelete, {
+    Set<String>? visited,
+  }) async {
+    Map<int, Set<int>> indicesBySheet = {};
+    if (idsToDelete.isEmpty) return indicesBySheet;
+
+    visited ??= {};
+    if (visited.contains(sheetName)) {
+      return indicesBySheet; // Evita loop infinito em dependências circulares
+    }
+    visited.add(sheetName);
+
+    final dependents =
+        foreignKeys?.where(
+          (fk) => fk.lookupTable == sheetName && fk.onDeleteCascade,
+        ) ??
+        [];
+
+    for (final fk in dependents) {
+      final childRepo = repo(fk.sourceTable);
+      final childData = await childRepo.findAll();
+
+      List<String> childIdsToDelete = [];
+      Set<int> childRowIndices = {}; // Utiliza Set para garantir índices únicos
+
+      for (int i = 0; i < childData.length; i++) {
+        final row = childData[i];
+        final fkValue = row[fk.sourceKeyColumn]?.toString();
+
+        if (fkValue != null && idsToDelete.contains(fkValue)) {
+          if (row.containsKey('id') && row['id'].toString().isNotEmpty) {
+            childIdsToDelete.add(row['id'].toString());
+          }
+          childRowIndices.add(i + 1);
+        }
+      }
+
+      if (childRowIndices.isNotEmpty) {
+        final childGid = await childRepo.getGid();
+        indicesBySheet.putIfAbsent(childGid, () => {}).addAll(childRowIndices);
+      }
+
+      if (childIdsToDelete.isNotEmpty) {
+        final cascadeIndices = await buildCascadeDeleteIndices(
+          fk.sourceTable,
+          childIdsToDelete,
+          visited: Set.from(visited), // Passa cópia do Set para a ramificação
+        );
+
+        // Faz o merge dos resultados
+        cascadeIndices.forEach((gid, indices) {
+          indicesBySheet.putIfAbsent(gid, () => {}).addAll(indices);
+        });
+      }
+    }
+    return indicesBySheet;
   }
 }

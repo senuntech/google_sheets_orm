@@ -23,7 +23,14 @@ class ForeignKey {
   /// Ex: "nome"
   final String lookupResultColumn;
 
+  /// Define se a coluna que recebe o resultado (sourceTargetColumn) será protegida 
+  /// automaticamente contra edição manual no Google Sheets. (Padrão: true)
   final bool isProtected;
+
+  /// Se verdadeiro, ao deletar um registro na aba de referência (lookupTable),
+  /// todos os registros vinculados a ele nesta aba (sourceTable) serão deletados 
+  /// em cascata automaticamente. (Padrão: false)
+  final bool onDeleteCascade;
 
   ForeignKey({
     required this.sourceTable,
@@ -33,5 +40,6 @@ class ForeignKey {
     required this.lookupKeyColumn,
     required this.lookupResultColumn,
     this.isProtected = true,
+    this.onDeleteCascade = false,
   });
 }

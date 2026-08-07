@@ -11,7 +11,7 @@ class SheetORM {
   SheetORM(this.api, this.spreadsheetId, this.sheetName, this.foreignKeys);
 
   /// Obtém o ID numérico da aba (GID) com cache para evitar chamadas extras
-  Future<int> _getGid() async {
+  Future<int> getGid() async {
     if (_cachedGid != null) return _cachedGid!;
     final ss = await api.spreadsheets.get(spreadsheetId);
     final sheet = ss.sheets?.firstWhere(
@@ -261,26 +261,47 @@ class SheetORM {
 
     if (indicesToDelete.isEmpty) return;
 
-    final gid = await _getGid();
-    indicesToDelete.sort((a, b) => b.compareTo(a));
+    final gid = await getGid();
 
-    final requests = indicesToDelete.map((index) {
-      return sheets.Request(
-        deleteDimension: sheets.DeleteDimensionRequest(
-          range: sheets.DimensionRange(
-            sheetId: gid,
-            dimension: "ROWS",
-            startIndex: index,
-            endIndex: index + 1,
+    // Pega os índices da cascata de todas as tabelas afetadas
+    final deletedIds = indicesToDelete
+        .map((idx) => rows[idx][0].toString())
+        .toList();
+    final cascadeIndices = await GoogleSheetsDatabase()
+        .buildCascadeDeleteIndices(sheetName, deletedIds);
+
+    // Adiciona os índices da tabela atual no mapa de deleção
+    cascadeIndices.putIfAbsent(gid, () => {}).addAll(indicesToDelete);
+
+    // Constrói os requests finais
+    final List<sheets.Request> requests = [];
+    cascadeIndices.forEach((sheetId, indices) {
+      // Ordena de forma decrescente para não quebrar a ordem de deleção no Sheets
+      final sortedIndices = indices.toList()..sort((a, b) => b.compareTo(a));
+      for (final index in sortedIndices) {
+        requests.add(
+          sheets.Request(
+            deleteDimension: sheets.DeleteDimensionRequest(
+              range: sheets.DimensionRange(
+                sheetId: sheetId,
+                dimension: "ROWS",
+                startIndex: index,
+                endIndex: index + 1,
+              ),
+            ),
           ),
-        ),
-      );
-    }).toList();
+        );
+      }
+    });
 
     await api.spreadsheets.batchUpdate(
       sheets.BatchUpdateSpreadsheetRequest(requests: requests),
       spreadsheetId,
     );
+
+    // Como a deleção pode ter apagado a linha 2 (que contém as fórmulas ARRAYFORMULA),
+    // nós reaplicamos as fórmulas para garantir que a planilha continue funcionando.
+    await GoogleSheetsDatabase().reapplyFormulas();
   }
 
   /// Deleta fisicamente a linha baseada no ID
@@ -297,24 +318,43 @@ class SheetORM {
     );
     if (rowIndex == -1) return;
 
-    final gid = await _getGid();
-    await api.spreadsheets.batchUpdate(
-      sheets.BatchUpdateSpreadsheetRequest(
-        requests: [
+    final gid = await getGid();
+
+    // Pega os índices da cascata
+    final cascadeIndices = await GoogleSheetsDatabase()
+        .buildCascadeDeleteIndices(sheetName, [id]);
+
+    // Adiciona o próprio índice
+    cascadeIndices.putIfAbsent(gid, () => {}).add(rowIndex);
+
+    // Constrói os requests garantindo unicidade e ordem decrescente
+    final List<sheets.Request> requests = [];
+    cascadeIndices.forEach((sheetId, indices) {
+      final sortedIndices = indices.toList()..sort((a, b) => b.compareTo(a));
+      for (final index in sortedIndices) {
+        requests.add(
           sheets.Request(
             deleteDimension: sheets.DeleteDimensionRequest(
               range: sheets.DimensionRange(
-                sheetId: gid,
+                sheetId: sheetId,
                 dimension: "ROWS",
-                startIndex: rowIndex,
-                endIndex: rowIndex + 1,
+                startIndex: index,
+                endIndex: index + 1,
               ),
             ),
           ),
-        ],
-      ),
+        );
+      }
+    });
+
+    await api.spreadsheets.batchUpdate(
+      sheets.BatchUpdateSpreadsheetRequest(requests: requests),
       spreadsheetId,
     );
+
+    // Como a deleção pode ter apagado a linha 2 (que contém as fórmulas ARRAYFORMULA),
+    // nós reaplicamos as fórmulas para garantir que a planilha continue funcionando.
+    await GoogleSheetsDatabase().reapplyFormulas();
   }
 
   /// Insere uma formula/valores em uma coluna ou linha exemplo: "A1:B1"
