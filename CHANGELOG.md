@@ -27,4 +27,7 @@
 * Added insertByCell method
 * Added formula support
 
- 
+## 1.4.0
+
+* Added automatic column protection for Formula and ForeignKey
+* Added comprehensive unit test suite using mocktail

@@ -23,6 +23,8 @@ class ForeignKey {
   /// Ex: "nome"
   final String lookupResultColumn;
 
+  final bool isProtected;
+
   ForeignKey({
     required this.sourceTable,
     required this.sourceKeyColumn,
@@ -30,5 +32,6 @@ class ForeignKey {
     required this.lookupTable,
     required this.lookupKeyColumn,
     required this.lookupResultColumn,
+    this.isProtected = true,
   });
 }

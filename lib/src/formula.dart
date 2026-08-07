@@ -8,5 +8,12 @@ class Formula {
   /// Tabela a ser aplicada (exemplo: "Sheet1")
   String sheet;
 
-  Formula({required this.formula, required this.range, required this.sheet});
+  final bool isProtected;
+
+  Formula({
+    required this.formula,
+    required this.range,
+    required this.sheet,
+    this.isProtected = true,
+  });
 }

@@ -1,7 +1,4 @@
 import 'package:google_sheets_orm/orm.dart';
-import 'package:google_sheets_orm/src/cell.dart';
-import 'package:google_sheets_orm/src/formula.dart';
-import 'package:google_sheets_orm/src/sheet_orm.dart';
 import 'package:google_sheets_orm/src/utils.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -32,7 +29,9 @@ class GoogleSheetsDatabase {
 
   /// Inicializa a base de dados
   Future<void> initialize({
-    required dynamic httpClient,
+    dynamic httpClient,
+    sheets.SheetsApi? injectedSheetsApi,
+    drive.DriveApi? injectedDriveApi,
     required String fileName,
     required Map<String, List<String>> structure,
     List<Formula>? formulas,
@@ -43,8 +42,12 @@ class GoogleSheetsDatabase {
     this.foreignKeys = foreignKeys;
     this.formulas = formulas;
 
-    final driveApi = drive.DriveApi(httpClient);
-    final sheetsApi = sheets.SheetsApi(httpClient);
+    if (injectedDriveApi == null && injectedSheetsApi == null && httpClient == null) {
+      throw Exception("You must provide either an httpClient or injected APIs for testing.");
+    }
+
+    final driveApi = injectedDriveApi ?? drive.DriveApi(httpClient!);
+    final sheetsApi = injectedSheetsApi ?? sheets.SheetsApi(httpClient!);
     api = sheetsApi;
 
     final search = await driveApi.files.list(
@@ -62,6 +65,7 @@ class GoogleSheetsDatabase {
 
       // Now checks both NEW columns and name CHANGES
       await _synchronizeStructure(sheetsApi);
+      await _applyAutomaticProtections(sheetsApi);
       return;
     }
 
@@ -87,6 +91,7 @@ class GoogleSheetsDatabase {
     }
 
     await _configureHeaders(sheetsApi);
+    await _applyAutomaticProtections(sheetsApi);
   }
 
   /// Atualiza as foreign keys na planilha
@@ -269,5 +274,94 @@ class GoogleSheetsDatabase {
 
       await api.spreadsheets.values.batchUpdate(batchRequest, spreadsheetId!);
     }
+  }
+
+  /// Aplica proteção automática em colunas de Fórmula e ForeignKey
+  Future<void> _applyAutomaticProtections(sheets.SheetsApi api) async {
+    final List<sheets.Request> protectionRequests = [];
+    final ss = await api.spreadsheets.get(spreadsheetId!);
+    final existingSheets = ss.sheets ?? [];
+
+    // Process Formulas
+    if (formulas != null) {
+      for (final formula in formulas!.where((f) => f.isProtected)) {
+        try {
+          final targetSheet = existingSheets.firstWhere(
+            (s) => s.properties?.title == formula.sheet,
+          );
+          final sheetId = targetSheet.properties?.sheetId;
+          if (sheetId == null) continue;
+
+          final letter = extractColumnLetter(formula.range);
+          final columnIndex = columnLetterToIndex(letter);
+
+          protectionRequests.add(
+            _buildProtectionRequest(
+              sheetId: sheetId,
+              columnIndex: columnIndex,
+              description: 'Auto-protected by google_sheets_orm (Formula)',
+            ),
+          );
+        } catch (e) {
+          // Skip silently if resolution fails
+        }
+      }
+    }
+
+    // Process Foreign Keys
+    if (foreignKeys != null) {
+      for (final fk in foreignKeys!.where((f) => f.isProtected)) {
+        try {
+          final targetSheet = existingSheets.firstWhere(
+            (s) => s.properties?.title == fk.sourceTable,
+          );
+          final sheetId = targetSheet.properties?.sheetId;
+          if (sheetId == null) continue;
+
+          final headers = _structure[fk.sourceTable];
+          if (headers == null) continue;
+
+          final columnIndex = headers.indexOf(fk.sourceTargetColumn);
+          if (columnIndex == -1) continue;
+
+          protectionRequests.add(
+            _buildProtectionRequest(
+              sheetId: sheetId,
+              columnIndex: columnIndex,
+              description: 'Auto-protected by google_sheets_orm (ForeignKey)',
+            ),
+          );
+        } catch (e) {
+          // Skip silently
+        }
+      }
+    }
+
+    if (protectionRequests.isNotEmpty) {
+      final batchRequest = sheets.BatchUpdateSpreadsheetRequest(
+        requests: protectionRequests,
+      );
+      await api.spreadsheets.batchUpdate(batchRequest, spreadsheetId!);
+    }
+  }
+
+  sheets.Request _buildProtectionRequest({
+    required int sheetId,
+    required int columnIndex,
+    required String description,
+  }) {
+    return sheets.Request(
+      addProtectedRange: sheets.AddProtectedRangeRequest(
+        protectedRange: sheets.ProtectedRange(
+          range: sheets.GridRange(
+            sheetId: sheetId,
+            startColumnIndex: columnIndex,
+            endColumnIndex: columnIndex + 1,
+          ),
+          description: description,
+          warningOnly: true,
+        ),
+      ),
+    );
   }
 }
