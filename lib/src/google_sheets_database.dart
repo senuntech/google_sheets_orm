@@ -17,6 +17,9 @@ class GoogleSheetsDatabase {
   sheets.SheetsApi? api;
   List<ForeignKey>? foreignKeys;
   List<Formula>? formulas;
+  Duration cacheTime = const Duration(seconds: 0);
+
+  final Map<String, SheetORM> _repos = {};
 
   SheetORM repo(String sheetName) {
     if (spreadsheetId == null || api == null) {
@@ -24,7 +27,19 @@ class GoogleSheetsDatabase {
         "Database not initialized. Call initialize() first in splash or login.",
       );
     }
-    return SheetORM(api!, spreadsheetId!, sheetName, foreignKeys, formulas);
+    
+    if (!_repos.containsKey(sheetName)) {
+      _repos[sheetName] = SheetORM(
+        api!, 
+        spreadsheetId!, 
+        sheetName, 
+        foreignKeys, 
+        formulas,
+        cacheTime,
+      );
+    }
+    
+    return _repos[sheetName]!;
   }
 
   /// Inicializa a base de dados
@@ -36,11 +51,13 @@ class GoogleSheetsDatabase {
     required Map<String, List<String>> structure,
     List<Formula>? formulas,
     List<ForeignKey>? foreignKeys,
+    Duration cacheTime = const Duration(seconds: 0),
   }) async {
     _fileName = fileName;
     _structure = structure;
     this.foreignKeys = foreignKeys;
     this.formulas = formulas;
+    this.cacheTime = cacheTime;
 
     if (injectedDriveApi == null &&
         injectedSheetsApi == null &&

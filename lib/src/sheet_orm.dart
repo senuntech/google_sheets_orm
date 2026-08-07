@@ -9,6 +9,10 @@ class SheetORM {
   int? _cachedGid;
   List<ForeignKey>? foreignKeys;
   List<Formula>? formulas;
+  final Duration cacheTime;
+
+  List<List<Object?>>? _cachedRawRows;
+  DateTime? _lastFetch;
 
   SheetORM(
     this.api,
@@ -16,6 +20,7 @@ class SheetORM {
     this.sheetName,
     this.foreignKeys, [
     this.formulas,
+    this.cacheTime = const Duration(seconds: 0),
   ]);
 
   /// Obtém o ID numérico da aba (GID) com cache para evitar chamadas extras
@@ -30,14 +35,31 @@ class SheetORM {
     return _cachedGid!;
   }
 
-  /// Busca todos os dados e retorna como uma lista de Maps
-  Future<List<Map<String, dynamic>>> findAll() async {
+  /// Busca os dados puros (com cabeçalho) da planilha usando cache se configurado
+  Future<List<List<Object?>>> getRawRows({bool forceRefresh = false}) async {
+    bool isCacheValid = _cachedRawRows != null &&
+        _lastFetch != null &&
+        (cacheTime.inMilliseconds > 0 ? DateTime.now().difference(_lastFetch!) < cacheTime : true);
+
+    if (!forceRefresh && isCacheValid) {
+      return _cachedRawRows!;
+    }
+
     final response = await api.spreadsheets.values.get(
       spreadsheetId,
       '$sheetName!A:Z',
     );
-    final rows = response.values;
-    if (rows == null || rows.isEmpty) return [];
+    final rows = response.values ?? [];
+    
+    _cachedRawRows = rows;
+    _lastFetch = DateTime.now();
+    return rows;
+  }
+
+  /// Busca todos os dados e retorna como uma lista de Maps
+  Future<List<Map<String, dynamic>>> findAll({bool forceRefresh = false}) async {
+    final rows = await getRawRows(forceRefresh: forceRefresh);
+    if (rows.isEmpty) return [];
 
     final headers = List<String>.from(rows[0]);
     return rows.skip(1).where((row) {
@@ -88,11 +110,7 @@ class SheetORM {
 
   /// Cria um registro com auto-incremento de ID
   Future<int> insert(Map<String, dynamic> data) async {
-    final response = await api.spreadsheets.values.get(
-      spreadsheetId,
-      '$sheetName!A:Z',
-    );
-    final rows = response.values ?? [];
+    final rows = await getRawRows();
     if (rows.isEmpty) throw Exception("Cabeçalhos não encontrados.");
 
     final headers = List<String>.from(rows[0]);
@@ -118,6 +136,8 @@ class SheetORM {
       '$sheetName!A1',
       valueInputOption: "USER_ENTERED",
     );
+    
+    _cachedRawRows = null; // Invalida o cache
     return newId;
   }
 
@@ -125,12 +145,7 @@ class SheetORM {
   Future<List<int>> insertAll(List<Map<String, dynamic>> dataList) async {
     if (dataList.isEmpty) return [];
 
-    final response = await api.spreadsheets.values.get(
-      spreadsheetId,
-      '$sheetName!A:Z',
-    );
-
-    final rows = response.values ?? [];
+    final rows = await getRawRows();
     if (rows.isEmpty) throw Exception("Cabeçalhos não encontrados.");
 
     final headers = List<String>.from(rows[0]);
@@ -173,18 +188,15 @@ class SheetORM {
       '$sheetName!A1',
       valueInputOption: "USER_ENTERED",
     );
-
+    
+    _cachedRawRows = null; // Invalida o cache
     return newIds;
   }
 
   /// Atualiza uma linha inteira em uma única chamada de API
   Future<void> updateWhereId(String id, Map<String, dynamic> data) async {
-    final response = await api.spreadsheets.values.get(
-      spreadsheetId,
-      '$sheetName!A:Z',
-    );
-    final rows = response.values;
-    if (rows == null || rows.isEmpty) throw Exception("Planilha vazia.");
+    final rows = await getRawRows();
+    if (rows.isEmpty) throw Exception("Planilha vazia.");
 
     final headers = List<String>.from(rows[0]);
     int rowIndex = rows.indexWhere(
@@ -221,6 +233,8 @@ class SheetORM {
       '$sheetName!A${rowIndex + 1}',
       valueInputOption: 'USER_ENTERED',
     );
+    
+    _cachedRawRows = null; // Invalida o cache
   }
 
   /// Deleta registros usando uma string de consulta (ex: "id=10" ou "status=inativo")
@@ -240,12 +254,7 @@ class SheetORM {
         .replaceAll('"', '')
         .trim();
 
-    final response = await api.spreadsheets.values.get(
-      spreadsheetId,
-      '$sheetName!A:Z',
-    );
-
-    final rows = response.values ?? [];
+    final rows = await getRawRows();
     if (rows.isEmpty) return;
 
     final headers = List<String>.from(rows[0]);
@@ -320,16 +329,14 @@ class SheetORM {
     // Como a deleção pode ter apagado a linha 2 (que contém as fórmulas ARRAYFORMULA),
     // nós reaplicamos as fórmulas para garantir que a planilha continue funcionando.
     await GoogleSheetsDatabase().reapplyFormulas();
+    
+    _cachedRawRows = null; // Invalida o cache local
   }
 
   /// Deleta fisicamente a linha baseada no ID
   Future<void> delete(String id) async {
-    final response = await api.spreadsheets.values.get(
-      spreadsheetId,
-      '$sheetName!A:A',
-    );
-    final rows = response.values;
-    if (rows == null) return;
+    final rows = await getRawRows();
+    if (rows.isEmpty) return;
 
     int rowIndex = rows.indexWhere(
       (row) => row.isNotEmpty && row[0].toString() == id,
@@ -373,6 +380,8 @@ class SheetORM {
     // Como a deleção pode ter apagado a linha 2 (que contém as fórmulas ARRAYFORMULA),
     // nós reaplicamos as fórmulas para garantir que a planilha continue funcionando.
     await GoogleSheetsDatabase().reapplyFormulas();
+    
+    _cachedRawRows = null; // Invalida o cache local
   }
 
   /// Insere uma formula/valores em uma coluna ou linha exemplo: "A1:B1"
@@ -396,5 +405,6 @@ class SheetORM {
 
       await api.spreadsheets.values.batchUpdate(batchRequest, spreadsheetId);
     }
+    _cachedRawRows = null; // Invalida o cache local
   }
 }
