@@ -1,5 +1,6 @@
 import 'package:google_sheets_orm/orm.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
+import 'package:google_sheets_orm/src/utils.dart';
 
 class SheetORM {
   final sheets.SheetsApi api;
@@ -7,8 +8,15 @@ class SheetORM {
   final String sheetName;
   int? _cachedGid;
   List<ForeignKey>? foreignKeys;
+  List<Formula>? formulas;
 
-  SheetORM(this.api, this.spreadsheetId, this.sheetName, this.foreignKeys);
+  SheetORM(
+    this.api,
+    this.spreadsheetId,
+    this.sheetName,
+    this.foreignKeys, [
+    this.formulas,
+  ]);
 
   /// Obtém o ID numérico da aba (GID) com cache para evitar chamadas extras
   Future<int> getGid() async {
@@ -32,7 +40,12 @@ class SheetORM {
     if (rows == null || rows.isEmpty) return [];
 
     final headers = List<String>.from(rows[0]);
-    return rows.skip(1).map((row) {
+    return rows.skip(1).where((row) {
+      if (row.isEmpty) return false;
+      int idColIndex = headers.indexOf("id");
+      if (idColIndex == -1 || idColIndex >= row.length) return false;
+      return row[idColIndex].toString().trim().isNotEmpty;
+    }).map((row) {
       final map = <String, dynamic>{};
       for (var j = 0; j < headers.length; j++) {
         map[headers[j]] = j < row.length ? row[j] : "";
@@ -96,7 +109,7 @@ class SheetORM {
 
     int newId = maxId + 1;
     final newRow = headers
-        .map((h) => h == "id" ? newId : (data[h] ?? ""))
+        .map((h) => h == "id" ? newId : data[h])
         .toList();
 
     await api.spreadsheets.values.append(
@@ -137,7 +150,7 @@ class SheetORM {
       }
     }
 
-    List<List<Object>> newRows = [];
+    List<List<Object?>> newRows = [];
     List<int> newIds = [];
     int nextId = maxId + 1;
 
@@ -146,7 +159,7 @@ class SheetORM {
         if (h == "id") {
           return nextId;
         }
-        return data[h] ?? "";
+        return data[h];
       }).toList();
 
       newRows.add(List.from(newRow));
@@ -189,10 +202,15 @@ class SheetORM {
     });
 
     for (var i = 0; i < headers.length; i++) {
-      final isFk = foreignKeys!.any(
-        (e) => e.sourceTargetColumn == headers.elementAt(i),
-      );
-      if (isFk) {
+      final header = headers.elementAt(i);
+      final isFk = foreignKeys?.any((e) => e.sourceTargetColumn == header) ?? false;
+      
+      // Checa se a coluna está configurada em alguma Formula (extraindo a coluna da range)
+      // O regex captura a letra da coluna. Ex: range "M2:M2" captura "M".
+      // Para ser 100% preciso, se a coluna não foi enviada em `data`, evitamos sobrescrever.
+      final isFormula = formulas?.any((e) => e.sheet == sheetName && e.range.startsWith(listAlfabetic(i))) ?? false;
+
+      if (isFk || isFormula) {
         updatedRow[i] = null;
       }
     }

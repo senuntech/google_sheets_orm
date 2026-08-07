@@ -24,7 +24,7 @@ class GoogleSheetsDatabase {
         "Database not initialized. Call initialize() first in splash or login.",
       );
     }
-    return SheetORM(api!, spreadsheetId!, sheetName, foreignKeys);
+    return SheetORM(api!, spreadsheetId!, sheetName, foreignKeys, formulas);
   }
 
   /// Inicializa a base de dados
