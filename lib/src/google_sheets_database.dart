@@ -27,18 +27,18 @@ class GoogleSheetsDatabase {
         "Database not initialized. Call initialize() first in splash or login.",
       );
     }
-    
+
     if (!_repos.containsKey(sheetName)) {
       _repos[sheetName] = SheetORM(
-        api!, 
-        spreadsheetId!, 
-        sheetName, 
-        foreignKeys, 
+        api!,
+        spreadsheetId!,
+        sheetName,
+        foreignKeys,
         formulas,
         cacheTime,
       );
     }
-    
+
     return _repos[sheetName]!;
   }
 
@@ -424,20 +424,32 @@ class GoogleSheetsDatabase {
 
     for (final fk in dependents) {
       final childRepo = repo(fk.sourceTable);
-      final childData = await childRepo.findAll();
+      final rawRows = await childRepo.getRawRows();
+      if (rawRows.isEmpty) continue;
+
+      final headers = List<String>.from(rawRows[0]);
+      int fkColIndex = headers.indexOf(fk.sourceKeyColumn);
+      int idColIndex = headers.indexOf('id');
+
+      if (fkColIndex == -1) continue;
 
       List<String> childIdsToDelete = [];
-      Set<int> childRowIndices = {}; // Utiliza Set para garantir índices únicos
+      Set<int> childRowIndices = {};
 
-      for (int i = 0; i < childData.length; i++) {
-        final row = childData[i];
-        final fkValue = row[fk.sourceKeyColumn]?.toString();
+      for (int i = 1; i < rawRows.length; i++) {
+        final row = rawRows[i];
+        if (row.length <= fkColIndex) continue;
+
+        final fkValue = row[fkColIndex]?.toString();
 
         if (fkValue != null && idsToDelete.contains(fkValue)) {
-          if (row.containsKey('id') && row['id'].toString().isNotEmpty) {
-            childIdsToDelete.add(row['id'].toString());
+          if (idColIndex != -1 && row.length > idColIndex) {
+            final idVal = row[idColIndex]?.toString();
+            if (idVal != null && idVal.isNotEmpty) {
+              childIdsToDelete.add(idVal);
+            }
           }
-          childRowIndices.add(i + 1);
+          childRowIndices.add(i);
         }
       }
 

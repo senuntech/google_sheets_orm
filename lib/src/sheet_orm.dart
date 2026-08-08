@@ -119,7 +119,7 @@ class SheetORM {
 
   /// Cria um registro com auto-incremento de ID
   Future<int> insert(Map<String, dynamic> data) async {
-    final rows = await getRawRows();
+    final rows = await getRawRows(forceRefresh: true);
     if (rows.isEmpty) throw Exception("Cabeçalhos não encontrados.");
 
     final headers = List<String>.from(rows[0]);
@@ -127,11 +127,15 @@ class SheetORM {
 
     int maxId = 0;
     int lastPopulatedRow = 1; // 1 is header
+    int firstEmptyRow = -1;
+
     for (var i = 1; i < rows.length; i++) {
+      bool isEmptyId = true;
       if (rows[i].length > idColIndex) {
         var val = rows[i][idColIndex];
         var idStr = val == null ? "" : val.toString().trim();
         if (idStr.isNotEmpty && idStr != "null") {
+          isEmptyId = false;
           lastPopulatedRow = i + 1;
 
           var id = double.tryParse(idStr)?.toInt() ?? int.tryParse(idStr);
@@ -140,11 +144,15 @@ class SheetORM {
           }
         }
       }
+      if (isEmptyId && firstEmptyRow == -1) {
+        firstEmptyRow = i + 1;
+      }
     }
 
     int newId = maxId + 1;
+    int nextRow = firstEmptyRow != -1 ? firstEmptyRow : lastPopulatedRow + 1;
+
     final newRow = headers.map((h) => h == "id" ? newId : data[h]).toList();
-    int nextRow = lastPopulatedRow + 1;
     List<sheets.ValueRange> updateData = [];
 
     for (int i = 0; i < headers.length; i++) {
@@ -179,7 +187,7 @@ class SheetORM {
   Future<List<int>> insertAll(List<Map<String, dynamic>> dataList) async {
     if (dataList.isEmpty) return [];
 
-    final rows = await getRawRows();
+    final rows = await getRawRows(forceRefresh: true);
     if (rows.isEmpty) throw Exception("Cabeçalhos não encontrados.");
 
     final headers = List<String>.from(rows[0]);
@@ -188,11 +196,15 @@ class SheetORM {
 
     int maxId = 0;
     int lastPopulatedRow = 1; // 1 is header
+    List<int> emptyRows = [];
+
     for (var i = 1; i < rows.length; i++) {
+      bool isEmptyId = true;
       if (rows[i].length > idColIndex) {
         var val = rows[i][idColIndex];
         var idStr = val == null ? "" : val.toString().trim();
         if (idStr.isNotEmpty && idStr != "null") {
+          isEmptyId = false;
           lastPopulatedRow = i + 1;
 
           var currentId =
@@ -201,6 +213,9 @@ class SheetORM {
             maxId = currentId;
           }
         }
+      }
+      if (isEmptyId) {
+        emptyRows.add(i + 1);
       }
     }
 
@@ -221,11 +236,18 @@ class SheetORM {
       nextId++;
     }
 
-    int nextRow = lastPopulatedRow + 1;
     List<sheets.ValueRange> updateData = [];
+    int nextAppendRow = rows.length + 1;
 
     for (int r = 0; r < newRows.length; r++) {
-      int currentRow = nextRow + r;
+      int currentRow;
+      if (emptyRows.isNotEmpty) {
+        currentRow = emptyRows.removeAt(0);
+      } else {
+        currentRow = nextAppendRow;
+        nextAppendRow++;
+      }
+
       for (int c = 0; c < headers.length; c++) {
         var val = newRows[r][c];
         if (val != null && val.toString().isNotEmpty) {
@@ -257,7 +279,7 @@ class SheetORM {
 
   /// Atualiza uma linha inteira em uma única chamada de API
   Future<void> updateWhereId(String id, Map<String, dynamic> data) async {
-    final rows = await getRawRows();
+    final rows = await getRawRows(forceRefresh: true);
     if (rows.isEmpty) throw Exception("Planilha vazia.");
 
     final headers = List<String>.from(rows[0]);
@@ -321,7 +343,7 @@ class SheetORM {
         .replaceAll('"', '')
         .trim();
 
-    final rows = await getRawRows();
+    final rows = await getRawRows(forceRefresh: true);
     if (rows.isEmpty) return;
 
     final headers = List<String>.from(rows[0]);
@@ -402,7 +424,7 @@ class SheetORM {
 
   /// Deleta fisicamente a linha baseada no ID
   Future<void> delete(String id) async {
-    final rows = await getRawRows();
+    final rows = await getRawRows(forceRefresh: true);
     if (rows.isEmpty) return;
 
     int rowIndex = rows.indexWhere(
