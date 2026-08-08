@@ -37,9 +37,12 @@ class SheetORM {
 
   /// Busca os dados puros (com cabeçalho) da planilha usando cache se configurado
   Future<List<List<Object?>>> getRawRows({bool forceRefresh = false}) async {
-    bool isCacheValid = _cachedRawRows != null &&
+    bool isCacheValid =
+        _cachedRawRows != null &&
         _lastFetch != null &&
-        (cacheTime.inMilliseconds > 0 ? DateTime.now().difference(_lastFetch!) < cacheTime : true);
+        (cacheTime.inMilliseconds > 0
+            ? DateTime.now().difference(_lastFetch!) < cacheTime
+            : true);
 
     if (!forceRefresh && isCacheValid) {
       return _cachedRawRows!;
@@ -50,30 +53,36 @@ class SheetORM {
       '$sheetName!A:Z',
     );
     final rows = response.values ?? [];
-    
+
     _cachedRawRows = rows;
     _lastFetch = DateTime.now();
     return rows;
   }
 
   /// Busca todos os dados e retorna como uma lista de Maps
-  Future<List<Map<String, dynamic>>> findAll({bool forceRefresh = false}) async {
+  Future<List<Map<String, dynamic>>> findAll({
+    bool forceRefresh = false,
+  }) async {
     final rows = await getRawRows(forceRefresh: forceRefresh);
     if (rows.isEmpty) return [];
 
     final headers = List<String>.from(rows[0]);
-    return rows.skip(1).where((row) {
-      if (row.isEmpty) return false;
-      int idColIndex = headers.indexOf("id");
-      if (idColIndex == -1 || idColIndex >= row.length) return false;
-      return row[idColIndex].toString().trim().isNotEmpty;
-    }).map((row) {
-      final map = <String, dynamic>{};
-      for (var j = 0; j < headers.length; j++) {
-        map[headers[j]] = j < row.length ? row[j] : "";
-      }
-      return map;
-    }).toList();
+    return rows
+        .skip(1)
+        .where((row) {
+          if (row.isEmpty) return false;
+          int idColIndex = headers.indexOf("id");
+          if (idColIndex == -1 || idColIndex >= row.length) return false;
+          return row[idColIndex].toString().trim().isNotEmpty;
+        })
+        .map((row) {
+          final map = <String, dynamic>{};
+          for (var j = 0; j < headers.length; j++) {
+            map[headers[j]] = j < row.length ? row[j] : "";
+          }
+          return map;
+        })
+        .toList();
   }
 
   /// Busca um único registro pelo ID e retorna um Map
@@ -117,26 +126,51 @@ class SheetORM {
     int idColIndex = headers.indexOf("id");
 
     int maxId = 0;
+    int lastPopulatedRow = 1; // 1 is header
     for (var i = 1; i < rows.length; i++) {
       if (rows[i].length > idColIndex) {
-        maxId = BigInt.parse(rows[i][idColIndex].toString()).toInt() > maxId
-            ? int.parse(rows[i][idColIndex].toString())
-            : maxId;
+        var val = rows[i][idColIndex];
+        var idStr = val == null ? "" : val.toString().trim();
+        if (idStr.isNotEmpty && idStr != "null") {
+          lastPopulatedRow = i + 1;
+
+          var id = double.tryParse(idStr)?.toInt() ?? int.tryParse(idStr);
+          if (id != null && id > maxId) {
+            maxId = id;
+          }
+        }
       }
     }
 
     int newId = maxId + 1;
-    final newRow = headers
-        .map((h) => h == "id" ? newId : data[h])
-        .toList();
+    final newRow = headers.map((h) => h == "id" ? newId : data[h]).toList();
+    int nextRow = lastPopulatedRow + 1;
+    List<sheets.ValueRange> updateData = [];
 
-    await api.spreadsheets.values.append(
-      sheets.ValueRange(values: [newRow]),
-      spreadsheetId,
-      '$sheetName!A1',
-      valueInputOption: "USER_ENTERED",
-    );
-    
+    for (int i = 0; i < headers.length; i++) {
+      var val = newRow[i];
+      if (val != null && val.toString().isNotEmpty) {
+        String colLetter = listAlfabetic(i);
+        updateData.add(
+          sheets.ValueRange(
+            range: '$sheetName!$colLetter$nextRow',
+            values: [
+              [val],
+            ],
+          ),
+        );
+      }
+    }
+
+    if (updateData.isNotEmpty) {
+      final batchRequest = sheets.BatchUpdateValuesRequest(
+        valueInputOption: "USER_ENTERED",
+        data: updateData,
+      );
+
+      await api.spreadsheets.values.batchUpdate(batchRequest, spreadsheetId);
+    }
+
     _cachedRawRows = null; // Invalida o cache
     return newId;
   }
@@ -153,11 +187,16 @@ class SheetORM {
     if (idColIndex == -1) throw Exception("Coluna 'id' não encontrada.");
 
     int maxId = 0;
+    int lastPopulatedRow = 1; // 1 is header
     for (var i = 1; i < rows.length; i++) {
       if (rows[i].length > idColIndex) {
-        var currentIdValue = rows[i][idColIndex].toString();
-        if (currentIdValue.isNotEmpty) {
-          int? currentId = int.tryParse(currentIdValue);
+        var val = rows[i][idColIndex];
+        var idStr = val == null ? "" : val.toString().trim();
+        if (idStr.isNotEmpty && idStr != "null") {
+          lastPopulatedRow = i + 1;
+
+          var currentId =
+              double.tryParse(idStr)?.toInt() ?? int.tryParse(idStr);
           if (currentId != null && currentId > maxId) {
             maxId = currentId;
           }
@@ -182,13 +221,36 @@ class SheetORM {
       nextId++;
     }
 
-    await api.spreadsheets.values.append(
-      sheets.ValueRange(values: newRows),
-      spreadsheetId,
-      '$sheetName!A1',
-      valueInputOption: "USER_ENTERED",
-    );
-    
+    int nextRow = lastPopulatedRow + 1;
+    List<sheets.ValueRange> updateData = [];
+
+    for (int r = 0; r < newRows.length; r++) {
+      int currentRow = nextRow + r;
+      for (int c = 0; c < headers.length; c++) {
+        var val = newRows[r][c];
+        if (val != null && val.toString().isNotEmpty) {
+          String colLetter = listAlfabetic(c);
+          updateData.add(
+            sheets.ValueRange(
+              range: '$sheetName!$colLetter$currentRow',
+              values: [
+                [val],
+              ],
+            ),
+          );
+        }
+      }
+    }
+
+    if (updateData.isNotEmpty) {
+      final batchRequest = sheets.BatchUpdateValuesRequest(
+        valueInputOption: "USER_ENTERED",
+        data: updateData,
+      );
+
+      await api.spreadsheets.values.batchUpdate(batchRequest, spreadsheetId);
+    }
+
     _cachedRawRows = null; // Invalida o cache
     return newIds;
   }
@@ -215,12 +277,17 @@ class SheetORM {
 
     for (var i = 0; i < headers.length; i++) {
       final header = headers.elementAt(i);
-      final isFk = foreignKeys?.any((e) => e.sourceTargetColumn == header) ?? false;
-      
+      final isFk =
+          foreignKeys?.any((e) => e.sourceTargetColumn == header) ?? false;
+
       // Checa se a coluna está configurada em alguma Formula (extraindo a coluna da range)
       // O regex captura a letra da coluna. Ex: range "M2:M2" captura "M".
       // Para ser 100% preciso, se a coluna não foi enviada em `data`, evitamos sobrescrever.
-      final isFormula = formulas?.any((e) => e.sheet == sheetName && e.range.startsWith(listAlfabetic(i))) ?? false;
+      final isFormula =
+          formulas?.any(
+            (e) => e.sheet == sheetName && e.range.startsWith(listAlfabetic(i)),
+          ) ??
+          false;
 
       if (isFk || isFormula) {
         updatedRow[i] = null;
@@ -233,7 +300,7 @@ class SheetORM {
       '$sheetName!A${rowIndex + 1}',
       valueInputOption: 'USER_ENTERED',
     );
-    
+
     _cachedRawRows = null; // Invalida o cache
   }
 
@@ -329,7 +396,7 @@ class SheetORM {
     // Como a deleção pode ter apagado a linha 2 (que contém as fórmulas ARRAYFORMULA),
     // nós reaplicamos as fórmulas para garantir que a planilha continue funcionando.
     await GoogleSheetsDatabase().reapplyFormulas();
-    
+
     _cachedRawRows = null; // Invalida o cache local
   }
 
@@ -380,7 +447,7 @@ class SheetORM {
     // Como a deleção pode ter apagado a linha 2 (que contém as fórmulas ARRAYFORMULA),
     // nós reaplicamos as fórmulas para garantir que a planilha continue funcionando.
     await GoogleSheetsDatabase().reapplyFormulas();
-    
+
     _cachedRawRows = null; // Invalida o cache local
   }
 
