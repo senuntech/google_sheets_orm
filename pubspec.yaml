@@ -1,6 +1,6 @@
 name: google_sheets_orm
 description: "ORM for Google Sheets"
-version: 1.4.0
+version: 1.5.1
 homepage: https://github.com/senuntech/google_sheets_orm
 
 environment:

@@ -35,8 +35,9 @@ void main() {
         ],
       );
 
-      when(() => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'))
-          .thenAnswer((_) async => valueRange);
+      when(
+        () => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'),
+      ).thenAnswer((_) async => valueRange);
 
       final result = await orm.findAll();
 
@@ -54,8 +55,9 @@ void main() {
         ],
       );
 
-      when(() => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'))
-          .thenAnswer((_) async => valueRange);
+      when(
+        () => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'),
+      ).thenAnswer((_) async => valueRange);
 
       final result = await orm.findById(2);
 
@@ -71,26 +73,49 @@ void main() {
         ],
       );
 
-      when(() => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'))
-          .thenAnswer((_) async => valueRange);
+      when(
+        () => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'),
+      ).thenAnswer((_) async => valueRange);
 
-      when(() => mockValues.append(
-            any(),
-            'test_spreadsheet_id',
-            'TestSheet!A1',
-            valueInputOption: 'USER_ENTERED',
-          )).thenAnswer((_) async => sheets.AppendValuesResponse());
+      when(
+        () => mockValues.batchUpdate(any(), 'test_spreadsheet_id'),
+      ).thenAnswer((_) async => sheets.BatchUpdateValuesResponse());
 
       final newId = await orm.insert({'name': 'Jane'});
 
       expect(newId, 2);
-      verify(() => mockValues.append(
-            any(),
-            'test_spreadsheet_id',
-            'TestSheet!A1',
-            valueInputOption: 'USER_ENTERED',
-          )).called(1);
+      verify(
+        () => mockValues.batchUpdate(any(), 'test_spreadsheet_id'),
+      ).called(1);
     });
+
+    test(
+      'insert into empty sheet with trailing empty rows targets A2',
+      () async {
+        final valueRange = sheets.ValueRange(
+          values: [
+            ['id', 'name'],
+            ['', ''],
+            ['', ''],
+          ],
+        );
+
+        when(
+          () => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'),
+        ).thenAnswer((_) async => valueRange);
+
+        when(
+          () => mockValues.batchUpdate(any(), 'test_spreadsheet_id'),
+        ).thenAnswer((_) async => sheets.BatchUpdateValuesResponse());
+
+        final newId = await orm.insert({'name': 'Jane'});
+
+        expect(newId, 1);
+        verify(
+          () => mockValues.batchUpdate(any(), 'test_spreadsheet_id'),
+        ).called(1);
+      },
+    );
 
     test('updateWhereId updates correct row', () async {
       final valueRange = sheets.ValueRange(
@@ -101,24 +126,29 @@ void main() {
         ],
       );
 
-      when(() => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'))
-          .thenAnswer((_) async => valueRange);
+      when(
+        () => mockValues.get('test_spreadsheet_id', 'TestSheet!A:Z'),
+      ).thenAnswer((_) async => valueRange);
 
-      when(() => mockValues.update(
-            any(),
-            'test_spreadsheet_id',
-            'TestSheet!A3', // Row 2 + header (1) = 3
-            valueInputOption: 'USER_ENTERED',
-          )).thenAnswer((_) async => sheets.UpdateValuesResponse());
+      when(
+        () => mockValues.update(
+          any(),
+          'test_spreadsheet_id',
+          'TestSheet!A3', // Row 2 + header (1) = 3
+          valueInputOption: 'USER_ENTERED',
+        ),
+      ).thenAnswer((_) async => sheets.UpdateValuesResponse());
 
       await orm.updateWhereId('2', {'name': 'Janet'});
 
-      verify(() => mockValues.update(
-            any(),
-            'test_spreadsheet_id',
-            'TestSheet!A3',
-            valueInputOption: 'USER_ENTERED',
-          )).called(1);
+      verify(
+        () => mockValues.update(
+          any(),
+          'test_spreadsheet_id',
+          'TestSheet!A3',
+          valueInputOption: 'USER_ENTERED',
+        ),
+      ).called(1);
     });
   });
 }
